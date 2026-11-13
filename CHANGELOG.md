@@ -4,6 +4,10 @@ User-visible changes in each version. Loosely follows [Keep a Changelog](https:/
 
 ## [Unreleased]
 
+### Fixed
+
+- Google Nest speakers and displays play again. Recent Nest firmware reports "idle" with a "loading" note while it starts a stream, and AudioSync read that as the speaker giving up, so it turned the speaker off with "declined the stream" before the speaker had fetched any audio. On the Mac and on Windows.
+
 ## [0.9.2] - 2026-11-08
 
 ### Added

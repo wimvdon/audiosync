@@ -192,13 +192,25 @@ impl MediaStatus {
 
     fn parse(value: &Value) -> Option<MediaStatus> {
         let object = value.as_object()?;
+        let mut player_state = object
+            .get("playerState")
+            .and_then(Value::as_str)
+            .map(PlayerState::parse)
+            .unwrap_or(PlayerState::Idle);
+        // A receiver still loading the media reports `IDLE` with an
+        // `extendedStatus` whose `playerState` is `LOADING` (C51a): that is
+        // no end, so it reads as a state of its own.
+        let loading = object
+            .get("extendedStatus")
+            .and_then(|extended| extended.get("playerState"))
+            .and_then(Value::as_str)
+            == Some("LOADING");
+        if player_state == PlayerState::Idle && loading {
+            player_state = PlayerState::Other("LOADING".to_owned());
+        }
         Some(MediaStatus {
             media_session_id: object.get("mediaSessionId").and_then(Value::as_i64),
-            player_state: object
-                .get("playerState")
-                .and_then(Value::as_str)
-                .map(PlayerState::parse)
-                .unwrap_or(PlayerState::Idle),
+            player_state,
             idle_reason: object
                 .get("idleReason")
                 .and_then(Value::as_str)

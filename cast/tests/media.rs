@@ -321,6 +321,69 @@ fn idle_before_playing_fails_the_load() {
     assert!(events(&mut channel).contains(&Event::LoadFailed(MediaError::Idle(IdleReason::Error))));
 }
 
+/// A `MEDIA_STATUS` that is `IDLE` while `extendedStatus` says `LOADING`,
+/// as a Nest Hub on 2026 firmware answers a `LOAD` before it fetches.
+fn loading_status(request_id: u64, media_session_id: i64) -> CastMessage {
+    json_message(
+        "t-1",
+        "*",
+        NS_MEDIA,
+        json!({"type": "MEDIA_STATUS", "requestId": request_id, "status": [{
+            "mediaSessionId": media_session_id,
+            "playerState": "IDLE",
+            "extendedStatus": {
+                "playerState": "LOADING",
+                "mediaSessionId": media_session_id,
+                "media": {"contentId": URL, "streamType": "LIVE", "contentType": "audio/wav"},
+            },
+        }]}),
+    )
+}
+
+// covers: C51a
+#[test]
+fn idle_while_loading_waits_for_playing() {
+    let start = Instant::now();
+    for request_id in [102, 0] {
+        let mut channel = running(start, volume());
+        channel
+            .load(start, &request(Metadata::default()))
+            .expect("loads");
+        if request_id == 0 {
+            channel.handle(start, media_status("t-1", 102, 4, "BUFFERING", None));
+        }
+        channel.handle(start, loading_status(request_id, 4));
+        channel.handle(start, loading_status(0, 4));
+        let early = events(&mut channel);
+        assert!(
+            !early.iter().any(|event| matches!(event, Event::LoadFailed(_))),
+            "IDLE while loading is no failure: {early:?}"
+        );
+        channel.handle(start, media_status("t-1", 0, 4, "BUFFERING", None));
+        channel.handle(start, media_status("t-1", 0, 4, "PLAYING", None));
+        assert!(events(&mut channel).contains(&Event::Playing {
+            media_session_id: 4
+        }));
+    }
+}
+
+#[test]
+fn idle_without_reason_or_loading_still_fails_the_load() {
+    let start = Instant::now();
+    let mut channel = running(start, volume());
+    channel
+        .load(start, &request(Metadata::default()))
+        .expect("loads");
+    channel.handle(start, media_status("t-1", 102, 4, "BUFFERING", None));
+    events(&mut channel);
+    channel.handle(start, media_status("t-1", 0, 4, "IDLE", None));
+    assert!(
+        events(&mut channel)
+            .iter()
+            .any(|event| matches!(event, Event::LoadFailed(MediaError::Idle(_))))
+    );
+}
+
 #[test]
 fn device_reasons_are_cut_short_and_printable() {
     let start = Instant::now();
